@@ -1,11 +1,11 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/hub-core"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.0.1"
 edition = "2024"
-rust-version = "1.98"
+rust-version = "1.98.1"
 description = "Hub: identity and access management for the Cloud platform"
 publish = false
 
@@ -53,6 +53,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-actix-web = "0.7"
 dotenvy = "0.15"
+loxide = "0.0.5"
 
 # API documentation
 utoipa = { version = "6.0", features = ["yaml", "uuid", "time"] }

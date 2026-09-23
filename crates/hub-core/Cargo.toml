@@ -1,0 +1,22 @@
+[package]
+name = "hub-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "Hub server entry point: configuration, telemetry, and REST + gRPC wiring"
+
+[[bin]]
+name = "hub-server"
+path = "src/main.rs"
+
+[dependencies]
+actix-web.workspace = true
+anyhow.workspace = true
+loxide.workspace = true
+tokio.workspace = true
+tonic.workspace = true
+tonic-health.workspace = true
+
+[lints]
+workspace = true
