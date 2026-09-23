@@ -1,0 +1,58 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+description = "Hub: identity and access management for the Cloud platform"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+
+[workspace.dependencies]
+# Internal crates
+hub-cache = { path = "crates/hub-cache" }
+hub-common = { path = "crates/hub-common" }
+hub-db = { path = "crates/hub-db" }
+hub-grpc = { path = "crates/hub-grpc" }
+hub-http = { path = "crates/hub-http" }
+hub-proto = { path = "crates/hub-proto" }
+
+# Runtime and transport
+tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+actix-web = "4.15"
+actix-cors = "0.7"
+tonic = "0.14"
+tonic-prost = "0.14"
+tonic-prost-build = "0.14"
+tonic-health = "0.14"
+tonic-reflection = "0.14"
+prost = "0.14"
+
+# Data
+sqlx = { version = "0.9", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls", "macros", "migrate", "uuid", "time", "json"] }
+redis = { version = "1.7", features = ["tokio-comp", "connection-manager"] }
+uuid = { version = "1.26", features = ["v7", "serde"] }
+time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
+
+# Serialization and errors
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Observability and configuration
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-actix-web = "0.7"
+dotenvy = "0.15"
+
+# API documentation
+utoipa = { version = "6.0", features = ["yaml", "uuid", "time"] }
