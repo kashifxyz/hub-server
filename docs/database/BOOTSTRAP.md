@@ -2,7 +2,7 @@
 
 How to prepare PostgreSQL for Hub by hand: roles, the database, and privileges. This is done **once per PostgreSQL cluster** (and again for each new environment). It is deliberately **not** automated in code or migrations: creating roles needs superuser rights, and the server must never have them.
 
-Migrations (tables, RLS policies, functions) come after this and run as `hubownerusr`. They are not covered here.
+Migrations (tables, indexes, and RLS policies) come after this and run as `hubownerusr`. They are not covered here.
 
 ---
 
@@ -161,8 +161,9 @@ ALTER DEFAULT PRIVILEGES FOR ROLE hubownerusr IN SCHEMA public
     GRANT USAGE, SELECT ON SEQUENCES TO hubappusr, hubplatformusr;
 
 -- Functions: PostgreSQL lets PUBLIC execute every new function by default.
--- Remove that (globally: no IN SCHEMA, see the note below), then grant only
--- to the runtime roles.
+-- Hub's schema defines no functions; this is defense in depth in case one is
+-- ever created. Remove PUBLIC's access (globally: no IN SCHEMA, see the note
+-- below), then grant only to the runtime roles.
 ALTER DEFAULT PRIVILEGES FOR ROLE hubownerusr
     REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES FOR ROLE hubownerusr IN SCHEMA public
@@ -190,7 +191,7 @@ REDIS_URL=redis://127.0.0.1:6379
 LOG_LEVEL=info
 ```
 
-`hubownerusr`'s URL is **not** part of the server configuration. Keep it wherever you run migrations from.
+For migrations, also set `DATABASE_OWNER_URL=postgres://hubownerusr:<hubownerusr password>@localhost:5432/hub`. Only `make migrate` and `make migrate-revert` read it; the server never connects as the owner.
 
 The same values can be passed as flags (`--database-url`, `--database-platform-url`, `--redis-url`), which override the environment. Prefer `.env`: flags expose passwords in `ps` output and shell history.
 
