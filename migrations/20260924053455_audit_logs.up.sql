@@ -10,9 +10,12 @@
 --     No functions, triggers, CHECK constraints, or DEFAULT values.
 --     Rust generates every value, including UUIDv7 primary keys and
 --     timestamps, and performs all validation.
---   * The one exception is seed data Hub needs to run (for example its own
---     permissions and system roles): seed INSERTs may call uuidv7() and
---     now() for their values. Nothing else in SQL generates values.
+--   * Exceptions, and only these:
+--       - Seed data Hub needs to run (for example its own permissions and
+--         system roles): seed INSERTs may call uuidv7() and now().
+--       - audit_logs partition management: one function,
+--         audit_logs_ensure_partitions(), so monthly partitions are created
+--         automatically (see below).
 --   * Values Rust normalizes before storing (lowercase email and slugs) are
 --     compared as stored.
 --   * Run as hubownerusr (owner). Runtime roles: hubappusr (RLS enforced) and
@@ -106,43 +109,96 @@ REVOKE UPDATE, DELETE, TRUNCATE ON audit_logs FROM hubappusr, hubplatformusr;
 
 
 -- -----------------------------------------------------------------------------
--- Partitions
+-- Partitions (created automatically)
 -- -----------------------------------------------------------------------------
--- One per month, September 2026 through December 2027, plus a DEFAULT
--- partition as a safety net so an insert never fails for lack of a
--- partition. Later months are added by future migrations (or a scheduled
--- job) ahead of time, with the same REVOKE.
+-- Monthly partitions are never listed by hand. audit_logs_ensure_partitions()
+-- creates every missing partition from the current month up to
+-- `months_ahead` months ahead. It is called:
+--   * once at the end of this migration, and
+--   * by hub-server at startup and then daily, through the platform role.
+--
+-- The DEFAULT partition is a safety net: if no partition exists yet for a
+-- month (for example the server was down across a month boundary), rows land
+-- there instead of failing, and the function moves them into the proper
+-- monthly partition when it creates it.
 --
 -- Partitions are only reachable through audit_logs: RLS policies and the
 -- append-only grants are defined on the parent and do not apply when a
 -- partition is queried directly, so the runtime roles get no access to the
 -- partitions themselves.
 
-CREATE TABLE audit_logs_2026_09 PARTITION OF audit_logs FOR VALUES FROM ('2026-09-01') TO ('2026-10-01');
-CREATE TABLE audit_logs_2026_10 PARTITION OF audit_logs FOR VALUES FROM ('2026-10-01') TO ('2026-11-01');
-CREATE TABLE audit_logs_2026_11 PARTITION OF audit_logs FOR VALUES FROM ('2026-11-01') TO ('2026-12-01');
-CREATE TABLE audit_logs_2026_12 PARTITION OF audit_logs FOR VALUES FROM ('2026-12-01') TO ('2027-01-01');
-CREATE TABLE audit_logs_2027_01 PARTITION OF audit_logs FOR VALUES FROM ('2027-01-01') TO ('2027-02-01');
-CREATE TABLE audit_logs_2027_02 PARTITION OF audit_logs FOR VALUES FROM ('2027-02-01') TO ('2027-03-01');
-CREATE TABLE audit_logs_2027_03 PARTITION OF audit_logs FOR VALUES FROM ('2027-03-01') TO ('2027-04-01');
-CREATE TABLE audit_logs_2027_04 PARTITION OF audit_logs FOR VALUES FROM ('2027-04-01') TO ('2027-05-01');
-CREATE TABLE audit_logs_2027_05 PARTITION OF audit_logs FOR VALUES FROM ('2027-05-01') TO ('2027-06-01');
-CREATE TABLE audit_logs_2027_06 PARTITION OF audit_logs FOR VALUES FROM ('2027-06-01') TO ('2027-07-01');
-CREATE TABLE audit_logs_2027_07 PARTITION OF audit_logs FOR VALUES FROM ('2027-07-01') TO ('2027-08-01');
-CREATE TABLE audit_logs_2027_08 PARTITION OF audit_logs FOR VALUES FROM ('2027-08-01') TO ('2027-09-01');
-CREATE TABLE audit_logs_2027_09 PARTITION OF audit_logs FOR VALUES FROM ('2027-09-01') TO ('2027-10-01');
-CREATE TABLE audit_logs_2027_10 PARTITION OF audit_logs FOR VALUES FROM ('2027-10-01') TO ('2027-11-01');
-CREATE TABLE audit_logs_2027_11 PARTITION OF audit_logs FOR VALUES FROM ('2027-11-01') TO ('2027-12-01');
-CREATE TABLE audit_logs_2027_12 PARTITION OF audit_logs FOR VALUES FROM ('2027-12-01') TO ('2028-01-01');
 CREATE TABLE audit_logs_default PARTITION OF audit_logs DEFAULT;
+REVOKE ALL ON TABLE audit_logs_default FROM hubappusr, hubplatformusr;
 
-REVOKE ALL ON TABLE
-    audit_logs_2026_09, audit_logs_2026_10, audit_logs_2026_11, audit_logs_2026_12,
-    audit_logs_2027_01, audit_logs_2027_02, audit_logs_2027_03, audit_logs_2027_04,
-    audit_logs_2027_05, audit_logs_2027_06, audit_logs_2027_07, audit_logs_2027_08,
-    audit_logs_2027_09, audit_logs_2027_10, audit_logs_2027_11, audit_logs_2027_12,
-    audit_logs_default
-FROM hubappusr, hubplatformusr;
+-- Runs as the owner (SECURITY DEFINER), because only the table owner may
+-- create partitions. Executable only by hubplatformusr. Returns the number of
+-- partitions created (0 when everything already exists).
+--
+-- TimeZone is pinned to UTC so month boundaries are midnight UTC no matter
+-- which session calls it; otherwise a caller in another time zone would
+-- create partitions that gap or overlap with existing ones.
+CREATE FUNCTION audit_logs_ensure_partitions(months_ahead integer)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+SET TimeZone = 'UTC'
+AS $$
+DECLARE
+    month_start date := date_trunc('month', now())::date;
+    last_month  date := (date_trunc('month', now()) + make_interval(months => months_ahead))::date;
+    month_end   date;
+    part_name   text;
+    created     integer := 0;
+BEGIN
+    -- One caller at a time (startup and the daily job may overlap).
+    PERFORM pg_advisory_xact_lock(hashtext('audit_logs_ensure_partitions'));
+
+    WHILE month_start <= last_month LOOP
+        month_end := (month_start + INTERVAL '1 month')::date;
+        part_name := format('audit_logs_%s', to_char(month_start, 'YYYY_MM'));
+
+        IF to_regclass(format('public.%I', part_name)) IS NULL THEN
+            -- Build the partition as a standalone table, move in any rows
+            -- that landed in the DEFAULT partition for this month, then
+            -- attach it. (Creating it directly would fail if DEFAULT already
+            -- holds rows for the range.)
+            EXECUTE format(
+                'CREATE TABLE public.%I (LIKE public.audit_logs INCLUDING ALL)',
+                part_name
+            );
+            EXECUTE format(
+                'WITH moved AS (
+                     DELETE FROM public.audit_logs_default
+                     WHERE occurred_at >= %L AND occurred_at < %L
+                     RETURNING *
+                 )
+                 INSERT INTO public.%I SELECT * FROM moved',
+                month_start, month_end, part_name
+            );
+            EXECUTE format(
+                'ALTER TABLE public.audit_logs ATTACH PARTITION public.%I FOR VALUES FROM (%L) TO (%L)',
+                part_name, month_start, month_end
+            );
+            EXECUTE format(
+                'REVOKE ALL ON TABLE public.%I FROM hubappusr, hubplatformusr',
+                part_name
+            );
+            created := created + 1;
+        END IF;
+
+        month_start := month_end;
+    END LOOP;
+
+    RETURN created;
+END
+$$;
+
+COMMENT ON FUNCTION audit_logs_ensure_partitions(integer) IS
+    'Creates missing monthly audit_logs partitions up to months_ahead months ahead. Called by hub-server.';
+
+REVOKE ALL ON FUNCTION audit_logs_ensure_partitions(integer) FROM PUBLIC, hubappusr;
+GRANT EXECUTE ON FUNCTION audit_logs_ensure_partitions(integer) TO hubplatformusr;
 
 
 -- -----------------------------------------------------------------------------
@@ -174,3 +230,9 @@ CREATE POLICY audit_logs_insert ON audit_logs
 
 -- No UPDATE or DELETE policies: with RLS enabled, those statements affect no
 -- rows, on top of the revoked privileges above.
+
+
+-- -----------------------------------------------------------------------------
+-- Initial partitions: the current month and the next three
+-- -----------------------------------------------------------------------------
+SELECT audit_logs_ensure_partitions(3);

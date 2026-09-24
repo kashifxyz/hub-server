@@ -4,6 +4,7 @@
 mod cli;
 mod config;
 mod logging;
+mod partitions;
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
@@ -60,6 +61,13 @@ async fn main() -> anyhow::Result<()> {
         "platform_role" => roles.platform
     );
 
+    // Audit log partitions: create any missing ones now, then re-check daily.
+    partitions::ensure(&db, &logger).await.inspect_err(|err| {
+        log_error!(logger, "cannot create audit log partitions (are migrations applied? run `make migrate`)",
+            "error" => err.to_string());
+    })?;
+    let partition_job = partitions::spawn_daily(db.clone(), logger.clone());
+
     // Redis
     let cache = Cache::connect(&settings.redis_url)
         .await
@@ -98,6 +106,7 @@ async fn main() -> anyhow::Result<()> {
     if let Err(err) = grpc_result {
         log_error!(logger, "gRPC server error", "error" => err.to_string());
     }
+    partition_job.abort();
     db.close().await;
 
     log_info!(logger, "hub-server stopped");

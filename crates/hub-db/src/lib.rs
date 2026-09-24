@@ -106,6 +106,18 @@ impl Database {
         })
     }
 
+    /// Creates any missing monthly `audit_logs` partitions from the current
+    /// month up to `months_ahead` months ahead, and returns how many were
+    /// created. Runs through the platform pool: only `hubplatformusr` may call
+    /// the database function that does this.
+    pub async fn ensure_audit_partitions(&self, months_ahead: i32) -> Result<i32, DbError> {
+        let created: i32 = sqlx::query_scalar("SELECT audit_logs_ensure_partitions($1)")
+            .bind(months_ahead)
+            .fetch_one(&self.platform)
+            .await?;
+        Ok(created)
+    }
+
     /// Pool for request handling (`hubappusr`, RLS enforced).
     pub fn app(&self) -> &PgPool {
         &self.app

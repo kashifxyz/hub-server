@@ -1,0 +1,35 @@
+Copyright (c) 2026 Baleeghuddin. All rights reserved.
+
+PROPRIETARY AND CONFIDENTIAL
+
+This software, including its source code, object code, documentation,
+database schemas, configuration, and all associated files (the "Software"),
+is the private property of Baleeghuddin (the "Owner") and is a personal
+project of the Owner.
+
+No license or right of any kind is granted to anyone other than the Owner.
+Without the Owner's prior written permission, no person or organization may:
+
+  1. use, run, or deploy the Software, in whole or in part;
+  2. copy, reproduce, or store copies of the Software;
+  3. modify, adapt, translate, or create derivative works of the Software;
+  4. distribute, publish, sublicense, sell, rent, lease, or otherwise make
+     the Software available to any third party;
+  5. reverse engineer, decompile, or disassemble the Software, except to the
+     extent that applicable law expressly permits it despite this limitation;
+  6. use the Software, or any part of it, to train, fine-tune, or evaluate
+     machine learning models; or
+  7. remove or alter this notice or any other proprietary notice.
+
+Being able to view or access the Software, for example in a public or shared
+repository, does not grant any license or permission. Any use not expressly
+permitted in writing by the Owner is prohibited.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL THE
+OWNER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OF OR OTHER DEALINGS IN THE SOFTWARE.
+
+Requests for permission must be made to the Owner in writing.

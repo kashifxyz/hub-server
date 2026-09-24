@@ -1,0 +1,348 @@
+// =============================================================================
+// Hub gRPC API (hub.v1)
+// =============================================================================
+//
+// The gRPC API is for platform services (compute, storage, databases, ...).
+// Browsers and the Hub console use the REST API instead.
+//
+// Services in this version:
+//   AuthorizationService  "can this principal do this, here?" decisions
+//   IdentityService       users, organizations, and membership lookups
+//   CatalogService        permissions and roles known to Hub
+//
+// Conventions:
+//   * IDs are UUIDv7 strings in canonical form, for example
+//     "01990000-0000-7000-8000-000000000001".
+//   * Permissions are "service.resource.action" strings, for example
+//     "hub.members.invite" or "compute.instance.create".
+//   * Every call that reads organization data takes organization_id. Hub
+//     never infers the organization from the caller or the user.
+//   * List calls are cursor-paginated: page_size (Hub applies a maximum) and
+//     an opaque page_token; an empty next_page_token means the last page.
+//   * Responses never contain secrets (password hashes, tokens, MFA secrets).
+//   * Callers authenticate as a registered platform service; every call is
+//     attributed to the calling service in the audit log.
+//
+// Errors use standard gRPC status codes:
+//   INVALID_ARGUMENT   malformed request (bad UUID, empty permission, ...)
+//   UNAUTHENTICATED    the calling service did not authenticate
+//   PERMISSION_DENIED  the calling service may not make this call
+//   NOT_FOUND          the requested object does not exist (or is not
+//                      visible in the given organization)
+//   UNAVAILABLE        Hub cannot serve the request right now; retry
+//
+// Compatibility: never reuse or renumber a field; delete fields with
+// `reserved`. Breaking changes go in a new package (hub.v2).
+// =============================================================================
+
+syntax = "proto3";
+
+package hub.v1;
+
+import "google/protobuf/timestamp.proto";
+
+
+// =============================================================================
+// Shared types
+// =============================================================================
+
+// Who is acting.
+message Principal {
+  PrincipalType type = 1;
+  // ID of the user, group, or service account.
+  string id = 2;
+}
+
+enum PrincipalType {
+  PRINCIPAL_TYPE_UNSPECIFIED = 0;
+  PRINCIPAL_TYPE_USER = 1;
+  PRINCIPAL_TYPE_GROUP = 2;
+  PRINCIPAL_TYPE_SERVICE_ACCOUNT = 3;
+}
+
+// A single resource inside an organization. Omit it to mean the organization
+// as a whole.
+message Resource {
+  // "service.resource", for example "compute.instance".
+  string type = 1;
+  string id = 2;
+}
+
+
+// =============================================================================
+// AuthorizationService
+// =============================================================================
+//
+// Decisions are deny-by-default: access is allowed only when the principal
+// holds a role binding in the organization (organization-wide, or on the
+// given resource) whose role grants the permission, the binding has not
+// expired, and the principal is active.
+
+service AuthorizationService {
+  // One decision.
+  rpc Check(CheckRequest) returns (CheckResponse);
+
+  // Up to 100 decisions in one round trip. Results are returned in request
+  // order. A malformed item fails the whole call with INVALID_ARGUMENT.
+  rpc BatchCheck(BatchCheckRequest) returns (BatchCheckResponse);
+
+  // Every permission the principal holds in the organization (optionally
+  // including those granted on one resource). Useful for rendering UIs;
+  // enforcement must still use Check.
+  rpc ListEffectivePermissions(ListEffectivePermissionsRequest)
+      returns (ListEffectivePermissionsResponse);
+}
+
+message CheckRequest {
+  Principal principal = 1;
+  string organization_id = 2;
+  string permission = 3;
+  // Optional. When set, bindings on this resource count as well as
+  // organization-wide bindings.
+  Resource resource = 4;
+}
+
+message CheckResponse {
+  bool allowed = 1;
+  // Why the decision was made (for logs and debugging; don't show raw values
+  // to end users).
+  DecisionReason reason = 2;
+  // When allowed: the role that granted the permission, for example "owner".
+  string granted_by_role = 3;
+}
+
+enum DecisionReason {
+  DECISION_REASON_UNSPECIFIED = 0;
+  // Allowed: a role binding grants the permission.
+  DECISION_REASON_GRANTED = 1;
+  // Denied: no role binding grants the permission.
+  DECISION_REASON_NO_MATCHING_BINDING = 2;
+  // Denied: the principal is not a member of the organization.
+  DECISION_REASON_NOT_A_MEMBER = 3;
+  // Denied: the principal is suspended, deactivated, or deleted.
+  DECISION_REASON_PRINCIPAL_INACTIVE = 4;
+  // Denied: the organization is suspended, deactivated, or deleted.
+  DECISION_REASON_ORGANIZATION_INACTIVE = 5;
+  // Denied: the permission is not in the catalog.
+  DECISION_REASON_UNKNOWN_PERMISSION = 6;
+}
+
+message BatchCheckRequest {
+  repeated CheckRequest checks = 1;
+}
+
+message BatchCheckResponse {
+  // Same length and order as BatchCheckRequest.checks.
+  repeated CheckResponse results = 1;
+}
+
+message ListEffectivePermissionsRequest {
+  Principal principal = 1;
+  string organization_id = 2;
+  // Optional: also include permissions granted on this resource.
+  Resource resource = 3;
+}
+
+message ListEffectivePermissionsResponse {
+  // Sorted, without duplicates.
+  repeated string permissions = 1;
+}
+
+
+// =============================================================================
+// IdentityService
+// =============================================================================
+//
+// Read-only lookups of users and organizations. Users are visible only inside
+// their home organization: every user lookup takes the organization_id it is
+// performed in, and a user from another organization is NOT_FOUND.
+
+service IdentityService {
+  rpc GetUser(GetUserRequest) returns (User);
+
+  // Up to 100 users. Unknown IDs, and users outside the organization, are
+  // left out of the response (not an error).
+  rpc BatchGetUsers(BatchGetUsersRequest) returns (BatchGetUsersResponse);
+
+  // Find a member of the organization by email (for example when sharing a
+  // resource with a colleague).
+  rpc LookupUserByEmail(LookupUserByEmailRequest) returns (User);
+
+  rpc GetOrganization(GetOrganizationRequest) returns (Organization);
+
+  // Users whose home organization is this organization.
+  rpc ListOrganizationMembers(ListOrganizationMembersRequest)
+      returns (ListOrganizationMembersResponse);
+}
+
+message User {
+  string id = 1;
+  // Empty only while a newly signed-up account is still onboarding.
+  string home_organization_id = 2;
+  string email = 3;
+  bool email_verified = 4;
+  string display_name = 5;
+  string given_name = 6;
+  string family_name = 7;
+  string avatar_url = 8;
+  UserStatus status = 9;
+  google.protobuf.Timestamp last_sign_in_at = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+}
+
+enum UserStatus {
+  USER_STATUS_UNSPECIFIED = 0;
+  USER_STATUS_PENDING_VERIFICATION = 1;
+  USER_STATUS_ACTIVE = 2;
+  USER_STATUS_SUSPENDED = 3;
+  USER_STATUS_DEACTIVATED = 4;
+}
+
+message Organization {
+  string id = 1;
+  string slug = 2;
+  string name = 3;
+  string description = 4;
+  string logo_url = 5;
+  string website_url = 6;
+  string default_locale = 7;
+  string default_timezone = 8;
+  OrganizationStatus status = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp updated_at = 11;
+}
+
+enum OrganizationStatus {
+  ORGANIZATION_STATUS_UNSPECIFIED = 0;
+  ORGANIZATION_STATUS_ACTIVE = 1;
+  ORGANIZATION_STATUS_SUSPENDED = 2;
+  ORGANIZATION_STATUS_DEACTIVATED = 3;
+}
+
+message GetUserRequest {
+  string organization_id = 1;
+  string user_id = 2;
+}
+
+message BatchGetUsersRequest {
+  string organization_id = 1;
+  repeated string user_ids = 2;
+}
+
+message BatchGetUsersResponse {
+  repeated User users = 1;
+}
+
+message LookupUserByEmailRequest {
+  string organization_id = 1;
+  string email = 2;
+}
+
+message GetOrganizationRequest {
+  string organization_id = 1;
+}
+
+message ListOrganizationMembersRequest {
+  string organization_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+  // Optional: only members with this status.
+  UserStatus status = 4;
+}
+
+message ListOrganizationMembersResponse {
+  repeated User members = 1;
+  string next_page_token = 2;
+}
+
+
+// =============================================================================
+// CatalogService
+// =============================================================================
+//
+// The permission catalog and the roles built from it. Each platform service
+// registers the permissions it enforces; the "hub" service name is reserved
+// for Hub's own permissions.
+
+service CatalogService {
+  // Declares the calling service's permissions. Idempotent: registering the
+  // same set again changes nothing, and descriptions are updated in place.
+  // Every permission must start with "<service>.". Permissions are never
+  // deleted by this call (roles may still reference them).
+  rpc RegisterPermissions(RegisterPermissionsRequest)
+      returns (RegisterPermissionsResponse);
+
+  rpc ListPermissions(ListPermissionsRequest) returns (ListPermissionsResponse);
+
+  // System roles, plus the custom roles of one organization when
+  // organization_id is set.
+  rpc ListRoles(ListRolesRequest) returns (ListRolesResponse);
+}
+
+message Permission {
+  // "service.resource.action"
+  string permission = 1;
+  string service = 2;
+  string resource = 3;
+  string action = 4;
+  string description = 5;
+  // Dangerous permissions get extra UI warnings and require recent
+  // authentication before use.
+  bool is_dangerous = 6;
+}
+
+message Role {
+  string id = 1;
+  // Empty for system roles.
+  string organization_id = 2;
+  // Stable identifier, for example "owner".
+  string key = 3;
+  string name = 4;
+  string description = 5;
+  bool is_system = 6;
+  repeated string permissions = 7;
+}
+
+message RegisterPermissionsRequest {
+  // The calling service's name, for example "compute". Must match the
+  // authenticated caller.
+  string service = 1;
+  repeated PermissionDefinition permissions = 2;
+}
+
+message PermissionDefinition {
+  // "service.resource.action"; the service part must equal
+  // RegisterPermissionsRequest.service.
+  string permission = 1;
+  string description = 2;
+  bool is_dangerous = 3;
+}
+
+message RegisterPermissionsResponse {
+  // Permissions that did not exist before this call.
+  int32 created = 1;
+  // Existing permissions whose description or danger flag changed.
+  int32 updated = 2;
+}
+
+message ListPermissionsRequest {
+  // Optional: only this service's permissions.
+  string service = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListPermissionsResponse {
+  repeated Permission permissions = 1;
+  string next_page_token = 2;
+}
+
+message ListRolesRequest {
+  // Optional: also include this organization's custom roles.
+  string organization_id = 1;
+}
+
+message ListRolesResponse {
+  repeated Role roles = 1;
+}

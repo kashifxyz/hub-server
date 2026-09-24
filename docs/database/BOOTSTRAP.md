@@ -33,7 +33,7 @@ Required role attributes:
 | `LOGIN` | yes | yes | yes |
 | `SUPERUSER` | **no** | **no** | **no** |
 | `BYPASSRLS` | no | **no** | **yes** |
-| `CREATEDB` | optional, local only (§8) | no | no |
+| `CREATEDB` | optional, local only (section 8) | no | no |
 | `CREATEROLE` | no | no | no |
 | Owns the database | **yes** | no | no |
 
@@ -72,7 +72,7 @@ Use a different password for each role. Passwords go into URLs (`postgres://user
 openssl rand -base64 32 | tr -d '/+=' | cut -c1-32
 ```
 
-Run it three times, once per role. Keep the values for `.env` (§7).
+Run it three times, once per role. Keep the values for `.env` (section 7).
 
 ---
 
@@ -180,7 +180,7 @@ Leave the session with `\q`.
 
 ## 7. Configure `hub-server`
 
-Put the passwords from §3 into `hub-server/.env` (never commit it; `.env.example` is the template):
+Put the passwords from section 3 into `hub-server/.env` (never commit it; `.env.example` is the template):
 
 ```sh
 REST_PORT=8443
@@ -227,7 +227,7 @@ WHERE rolname IN ('hubownerusr', 'hubappusr', 'hubplatformusr')
 ORDER BY rolname;
 ```
 
-Expected (`rolcreatedb` is `t` for `hubownerusr` only if you applied §8):
+Expected (`rolcreatedb` is `t` for `hubownerusr` only if you applied section 8):
 
 ```text
     rolname     | rolsuper | rolbypassrls | rolcreatedb | rolcreaterole | rolcanlogin
@@ -303,14 +303,14 @@ INF gRPC server listening addr=127.0.0.1:50053
 
 | Server error | Cause | Fix |
 | --- | --- | --- |
-| `role "hubappusr" does not exist` | §4 not done, or done in a different cluster or port | Create the roles. Check the host and port in the URL |
-| `password authentication failed for user "..."` | Wrong password in `.env`, or `pg_hba.conf` method mismatch | Reset with `\password <role>` and update `.env`. Check §2 |
-| `database "hub" does not exist` | §5 not done | Create the database |
+| `role "hubappusr" does not exist` | Section 4 not done, or done in a different cluster or port | Create the roles. Check the host and port in the URL |
+| `password authentication failed for user "..."` | Wrong password in `.env`, or `pg_hba.conf` method mismatch | Reset with `\password <role>` and update `.env`. Check section 2 |
+| `database "hub" does not exist` | Section 5 not done | Create the database |
 | `permission denied for database hub` | `CONNECT` not granted | `GRANT CONNECT ON DATABASE hub TO hubappusr, hubplatformusr;` |
 | `the app role ... must not be a superuser or have BYPASSRLS` | `DATABASE_URL` points to the wrong role, or `hubappusr` has too many rights | Point it to `hubappusr`. Run `ALTER ROLE hubappusr NOSUPERUSER NOBYPASSRLS;` |
 | `the platform role ... must have BYPASSRLS` | `DATABASE_PLATFORM_URL` points to the wrong role, or `hubplatformusr` lacks the attribute | Point it to `hubplatformusr`. Run `ALTER ROLE hubplatformusr BYPASSRLS;` |
 | `the app and platform pools must use different roles` | Both URLs use the same user | Use `hubappusr` and `hubplatformusr` respectively |
-| `missing DATABASE_URL ...` (exit code 2) | Not set in the environment, `.env`, or flags | Add it to `hub-server/.env` (§7) |
+| `missing DATABASE_URL ...` (exit code 2) | Not set in the environment, `.env`, or flags | Add it to `hub-server/.env` (section 7) |
 | `connection refused` | PostgreSQL isn't running, or is on another port | Start it. Check with `pg_isready -h localhost -p 5432` |
 | `permission denied for table ...` (later, after migrations) | Tables were created by a role other than `hubownerusr`, so the default privileges didn't apply | Run migrations as `hubownerusr`. Fix existing tables with `ALTER TABLE ... OWNER TO hubownerusr` and explicit `GRANT`s |
 
@@ -345,4 +345,4 @@ DROP ROLE IF EXISTS hubplatformusr;
 DROP ROLE IF EXISTS hubownerusr;
 ```
 
-Then run this guide again from §4.
+Then run this guide again from section 4.
