@@ -1,6 +1,12 @@
 [workspace]
 resolver = "3"
-members = ["crates/hub-core"]
+members = [
+    "crates/hub-cache",
+    "crates/hub-core",
+    "crates/hub-db",
+    "crates/hub-grpc",
+    "crates/hub-http",
+]
 
 [workspace.package]
 version = "0.0.1"

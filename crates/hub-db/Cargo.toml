@@ -6,14 +6,8 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-hub-common.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
-tracing.workspace = true
-
-[dev-dependencies]
-tokio.workspace = true
-uuid.workspace = true
 
 [lints]
 workspace = true

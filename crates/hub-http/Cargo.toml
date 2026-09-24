@@ -6,19 +6,8 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-hub-cache.workspace = true
-hub-common.workspace = true
-hub-db.workspace = true
-actix-cors.workspace = true
 actix-web.workspace = true
-serde.workspace = true
 tokio.workspace = true
-tracing.workspace = true
-utoipa.workspace = true
-uuid.workspace = true
-
-[dev-dependencies]
-serde_json.workspace = true
 
 [lints]
 workspace = true

@@ -11,12 +11,14 @@ name = "hub-server"
 path = "src/main.rs"
 
 [dependencies]
-actix-web.workspace = true
 anyhow.workspace = true
+dotenvy.workspace = true
+hub-cache.workspace = true
+hub-db.workspace = true
+hub-grpc.workspace = true
+hub-http.workspace = true
 loxide.workspace = true
 tokio.workspace = true
-tonic.workspace = true
-tonic-health.workspace = true
 
 [lints]
 workspace = true
